@@ -253,11 +253,9 @@ class ComputerPlayer:
         drop a disc.
         """
         rack = Rack([list(i) for i in array])
-        bestMove = rack.negamax(self.playerID, self.difficulty_level, -float("inf"), float("inf"), True)
-        print(bestMove)
+        # Note that we increment the difficulty level by one to match the number of plies we should be looking ahead.
+        bestMove = rack.negamax(self.playerID, self.difficulty_level + 1, -float("inf"), float("inf"), True)
         column = bestMove.column
-        # column = currentRack.get_best_column(self.playerID, self.difficulty_level)
-        print(column)
         return column
 
 ### CODE FOR TESTING ###
