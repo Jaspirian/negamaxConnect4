@@ -33,6 +33,14 @@ class Point:
 		"""
 		return hash("%s,%s" % (self.x, self.y))
 
+class Move:
+	def __init__(self, column, value):
+		"""
+		Constructor. Takes a column integer and a points value.
+		"""
+		self.column = column
+		self.value = value
+
 ### GAME-STATE OBJECTS ###
 
 class Rack:
@@ -47,9 +55,6 @@ class Rack:
 		self.width = len(array)
 		self.spaces = self.__array_to_spaces__()
 		self.quartets = self.__array_to_quartets__()
-
-		self.value = -float("inf")
-		self.column = None
 
 	def to_string(self):
 		"""
@@ -126,9 +131,9 @@ class Rack:
 
 	def __get_children__(self, playerID):
 		"""
-		Returns a list of column-rack pairs given the addition of one token.
+		Returns a dictionary of all possible column-rack pairs given the addition of one token.
 		"""
-		children = []
+		children = {}
 
 		for x in range(self.width):
 			firstEmpty = None
@@ -139,14 +144,10 @@ class Rack:
 					break
 			if firstEmpty == None:
 				continue
-			# newArray = copy.deepcopy(self.array)
 			newArray = list(map(list, self.array))
 			newArray[x][y] = playerID
 			newRack = Rack(newArray)
-			newRack.column = x
-			children.append(newRack)
-			# children.append((x, newRack))
-			# children[x] = newRack
+			children[x] = newRack
 
 		return children
 
@@ -155,38 +156,34 @@ class Rack:
 		Finds the best column for the player to play in.
 		Utilizes negamax to the depth passed in.
 		Utilizes alpha-beta pruning to discard low-value branches, if pruningEnabled is passed "true."
-		Returns a Rack object.
+		Returns a Move object.
 		"""
 
 		# allow for switching between players 1 and 2.
 		players = {1: 2, 2: 1}
 
 		# If we've reached the end of our depth or this is a winning state, return the value of this state for the last player.
-		self.value = self.__get_state_value__(players[player])
-		if depth == 0 or self.value == float("inf"):
-			return self
+		if depth == 0 or self.__get_state_value__(players[player]) == float("inf"):
+			return Move(None, self.__get_state_value__(players[player]))
 
-		# Get all possible states, for the player passed, from this state.
+		# Get all possible plays, for the player passed, from this state.
 		children = self.__get_children__(player)
 
-		# Randomize the children
-		random.shuffle(children)
-
-		# Initialize the best option, choosing a random move from those available.
-		best = children[0]
+		# Initialize the best option, choosing a random column from those available.
+		best = Move(random.choice(list(children)), -float("inf"))
 
 		# For each possible play,
-		for child in children:
+		for column,child in children.items():
 			# negamax iteratively down, switching players and alpha/beta, reducing depth by one, and multiplying alpha/beta by -1.
-			bestChild = child.negamax(players[player], depth - 1, -b, -a, pruningEnabled)
+			bestMove = child.negamax(players[player], depth - 1, -b, -a, pruningEnabled)
 
 			# If the negamax value is better than our best so far recorded, replace our best.
-			if best.value > bestChild.value:
-				best = bestChild
+			if bestMove.value > best.value:
+				best = Move(column, bestMove.value)
 
 			# If we've turned on alpha-beta pruning, this discards a branch if it's a worse value.
 			if pruningEnabled:
-				a = max(a, best.value)
+				a = max(a, bestMove.value)
 				if a >= b:
 					break
 
@@ -258,10 +255,10 @@ class ComputerPlayer:
 
 		rack = Rack([list(i) for i in array])
 		# Note that we increment the difficulty level by one to match the number of plies we should be looking ahead:
-		# That means a difficulty level of "0" will appropriately examine the immediate moves, instead of breaking. 
+		# That means a difficulty level of "0" will appropriately examine only the immediate moves, instead of breaking. 
 		# We may pass "False" to the final parameter here in order to disable alpha-beta pruning.
-		best = rack.negamax(self.playerID, self.difficulty_level + 1, -float("inf"), float("inf"), True)
-		column = best.column
+		bestMove = rack.negamax(self.playerID, self.difficulty_level + 1, -float("inf"), float("inf"), True)
+		column = bestMove.column
 		return column
 
 ### CODE FOR TESTING ###
