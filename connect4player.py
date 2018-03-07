@@ -1,268 +1,233 @@
 """
-This Connect Four player implements negamax to find best-case moves.
+This Connect Four player implements negamax to find the best move for a given depth.
 """
 __author__ = "Jasper Raynolds"
 __license__ = "MIT"
-__date__ = "February 2018"
+__date__ = "March 2018"
 
-import copy
 import random
 
-### CONVENIENCE OBJECTS ###
-# These are here purely to add to readability. I prefer location.x to location[0]
+class Connect_Four:
+	"""
+	A state object for the board game Connect Four.
 
-class Point:
-	def __init__(self, x, y):
-		"""
-		Constructor. Takes an X and Y integer.
-		"""
-		self.x = x
-		self.y = y
+	Attributes:
+		board: A 2D list of integers describing tiles placed and empty spaces.
+	"""
 
-	def __eq__(self, other):
+	def __init__(self, board):
 		"""
-		Returns true if the two Points have equal X and Y values.
+		Constructor. Takes a 2D list, row-major, top-down,
+		of integers.
 		"""
-		if other == None:
-			return False
-		return self.x == other.x and self.y == other.y
+		self.board = board
 
-	def __hash__(self):
-		"""
-		Hash function. Mashes together X and Y.
-		"""
-		return hash("%s,%s" % (self.x, self.y))
+		WINNING_LENGTH = 4
+		self.pieces = self._get_pieces(WINNING_LENGTH)
 
-class Move:
-	def __init__(self, column, value):
+	def _get_pieces(self, piece_width):
 		"""
-		Constructor. Takes a column integer and a points value.
+		Divides the board up into a list of pieces of length n, where n is the
+		minimum length of a winning line.
+		In connect-4, that number is 4.
 		"""
-		self.column = column
-		self.value = value
+		pieces = []
 
-### GAME-STATE OBJECTS ###
+		WIDTH = len(self.board[0])
+		HEIGHT = len(board)
 
-class Rack:
-	def __init__(self, array):
-		"""
-		Constructor. Takes a 2D array, column-major, of 0,1,2 integers.
-		Here 0 represents an empty space, 1 a space filled with the
-		first player's token, and 2 the second player's.
-		"""
-		self.array = array
-		self.height = len(array[0])
-		self.width = len(array)
-		self.spaces = self.__array_to_spaces__()
-		self.quartets = self.__array_to_quartets__()
+		for row in range(HEIGHT):
+			x_has_space = True
+			y_has_space = True
+			for col in range(WIDTH):
+				# Do we have room horizontally and vertically from this cell?
+				if col + piece_width > WIDTH:
+					x_has_space = False
+				if row + piece_width > HEIGHT:
+					y_has_space = False
+
+				if x_has_space and y_has_space:
+					# If both, do diagonals
+					piece = []
+					for i in range(piece_width):
+						piece.append(self.board[row+i][col+i])
+					pieces.append(piece)
+
+					piece = []
+					for i in range(piece_width):
+						piece.append(self.board[row+piece_width-1-i][col+i])
+					pieces.append(piece)
+
+				if x_has_space:
+					# If horizontally, do horizontal
+					piece = []
+					for i in range(piece_width):
+						piece.append(self.board[row][col+i])
+					pieces.append(piece)
+
+				if y_has_space:
+					# If vertically, do vertical
+					piece = []
+					for i in range(piece_width):
+						piece.append(self.board[row+i][col])
+					pieces.append(piece)
+			
+		return pieces
 
 	def to_string(self):
 		"""
-		Stringifies the rack in an easy-to-read fashion.
+		Returns a stringified version of the board
+		for easy reading.
 		"""
-		board = ""
-		for y in range(self.height-1, -1, -1):
-			for x in range(self.width):
-				board += str(self.array[x][y])
-				board += " "
-			if y > 0:
-				board += "\n"
-		return board
+		string = ""
 
-	def __array_to_spaces__(self):
-		"""
-		From this object's array, returns a dictionary of Spaces.
-		"""
-		spaces = {}
-		for y in range(self.height):
-			for x in range(self.width):
-				spaces[(x, y)] = Space(Point(x, y), self.array[x][y])
-		return spaces
+		for row in self.board:
+			for cell in row:
+				string += str(cell)
+				string += " "
+			string = string[:-1]
+			string += "\n"
 
-	def __array_to_quartets__(self):
-		"""
-		From this object's array, returns a list of Quartets.
-		"""
-		quartets = []
-		# rows
-		for y in range(self.height):
-			for x in range(self.width - 3):
-				quartets.append(self.__get_quartet__(Point(x, y), "horiz"))
+		return string[:-1]
 
-		# columns
-		for y in range(self.height - 3):
-			for x in range(self.width):
-				quartets.append(self.__get_quartet__(Point(x, y), "vert"))
-
-		# diagonal down
-		for y in range(self.height - 1, 2, -1):
-			for x in range(self.width - 3):
-				quartets.append(self.__get_quartet__(Point(x, y), "diag_down"))
-
-		# diagonal up
-		for y in range(self.height - 3):
-			for x in range(self.width - 3):
-				quartets.append(self.__get_quartet__(Point(x, y), "diag_up"))
-
-		return quartets
-
-	def __get_quartet__(self, start, direction):
+	def get_value(self, player_ID):
 		"""
-		Returns a quartet given a valid starting Point with three spaces after it.
-		The "direction" parameter takes "horiz", "vert", "diag_up" or "diag_down".
+		Gets the highest value present in all pieces
+		in this state, where pieces are judged by number
+		of the passed player ID's number within the piece.
 		"""
-		spaceList = []
-		offsets = {"horiz": Point(1, 0), "vert": Point(0, 1), "diag_up": Point(1, 1), "diag_down": Point(1, -1)}
-		offset = offsets[direction]
-		for index in range(4):
-			x = start.x + (offset.x * index)
-			y = start.y + (offset.y * index)
-			spaceList.append(self.spaces[(x, y)])
-		return Quartet(spaceList)
+		SCORES = {4: float("inf"), 3: 100, 2: 10, 1: 10, 0: 0}
+		best = 0
 
-	def __get_state_value__(self, player):
-		"""
-		Returns the highest value of all quartets in this rack, for this playerID.
-		"""
-		value = -float("inf")
-		for quartet in self.quartets:
-			value = max(quartet.get_value(player), value)
-		return value
-
-	def __get_children__(self, playerID):
-		"""
-		Returns a dictionary of all possible column-rack pairs given the addition of one token.
-		"""
-		children = {}
-
-		for x in range(self.width):
-			firstEmpty = None
-			for y in range(self.height):
-				tempSpace = self.spaces[(x, y)]
-				if tempSpace.is_playable(self.spaces):
-					firstEmpty = tempSpace
-					break
-			if firstEmpty == None:
+		for piece in self.pieces:
+			if 1 in piece and 2 in piece:
+				# If both players have played in this piece, neither can win it.
 				continue
-			newArray = list(map(list, self.array))
-			newArray[x][y] = playerID
-			newRack = Rack(newArray)
-			children[x] = newRack
+
+			matches = 0
+			for p in piece:
+				if p == player_ID:
+					matches += 1
+			best = max(best, SCORES[matches])
+
+		return best
+
+	def get_children(self, player_ID):
+		"""
+		Returns a list of all possible board states
+		reachable from this one with a single move by the
+		player passed.
+		"""
+		children = []
+
+		for column in range(len(self.board[0])):
+			if self.board[0][column] == 0:
+				# If we've found a column with an empty cell at the top...
+				emptyRow = 0
+				for row in range(1, len(self.board), 1):
+					# ...iterate down and find the row of the last empty cell.
+					if self.board[row][column] == 0:
+						emptyRow = row
+					else :
+						break
+
+				child_board = [x[:] for x in self.board]
+				child_board[emptyRow][column] = player_ID
+				child = Connect_Four(child_board)
+				children.append(child)
 
 		return children
 
-	def negamax(self, player, depth, a, b, pruningEnabled):
+	def find_differing_column(self, other):
 		"""
-		Finds the best column for the player to play in.
-		Utilizes negamax to the depth passed in.
-		Utilizes alpha-beta pruning to discard low-value branches, if pruningEnabled is passed "true."
-		Returns a Move object.
+		Interprets another Connect_Four object from this one.
+		Returns the column in which the first difference appears.
 		"""
+		HEIGHT = len(self.board)
+		WIDTH = len(self.board[0])
 
-		# allow for switching between players 1 and 2.
-		players = {1: 2, 2: 1}
+		for row in range(HEIGHT):
+			for column in range(WIDTH):
+				if self.board[row][column] != other.board[row][column]:
+					return column
+		return None
 
-		# If we've reached the end of our depth or this is a winning state, return the value of this state for the last player.
-		if depth == 0 or self.__get_state_value__(players[player]) == float("inf"):
-			return Move(None, self.__get_state_value__(players[player]))
+	def negamax(self, player_ID, depth, a, b, isPruning):
+		"""
+		Negamax function. Compares state point values recursively.
+		"""
+		players = {1:2, 2:1}
 
-		# Get all possible plays, for the player passed, from this state.
-		children = self.__get_children__(player)
+		game_is_over = self.get_value(player_ID) == float("inf") or self.get_value(players[player_ID]) == float("inf")
+		if depth == 0 or game_is_over:
+			return self.get_value(player_ID)
 
-		# Initialize the best option, choosing a random column from those available.
-		best = Move(random.choice(list(children)), -float("inf"))
+		best = -float("inf")
 
-		# For each possible play,
-		for column,child in children.items():
-			# negamax iteratively down, switching players and alpha/beta, reducing depth by one, and multiplying alpha/beta by -1.
-			bestMove = child.negamax(players[player], depth - 1, -b, -a, pruningEnabled)
+		children = self.get_children(players[player_ID])
+		random.shuffle(children)
 
-			# If the negamax value is better than our best so far recorded, replace our best.
-			if bestMove.value > best.value:
-				best = Move(column, bestMove.value)
+		for child in children:
+			value = child.negamax(players[player_ID], depth-1, -b, -a, isPruning)
+			best = max(best, value)
 
-			# If we've turned on alpha-beta pruning, this discards a branch if it's a worse value.
-			if pruningEnabled:
-				a = max(a, bestMove.value)
+			# Prunes low-value children. Alpha-beta.
+			if isPruning:
+				a = max(a, value)
 				if a >= b:
 					break
 
-		# Multiply the best value by -1.
-		best.value *= -1
-		return best
-
-class Quartet:
-	def __init__(self, spaces):
-		"""
-		Constructor, takes a list of four spaces.
-		"""
-		self.tokenList = {0: 0, 1: 0, 2: 0}
-		for space in spaces:
-			self.tokenList[space.value] += 1
-		self.spaces = spaces
-
-	def get_value(self, player):
-		"""
-		Evaluates this quartet and returns the computed value of the state for the player passed.
-		"""
-		values = {4: float("inf"), 3: 100, 2: 10, 1: 1, 0: .1}
+		return -best
 		
-		if self.tokenList[1] > 0 and self.tokenList[2] > 0:
-			# This quart is unwinnable.
-			return 0
-
-		return values[self.tokenList[player]]
-
-class Space:
-	def __init__(self, location, value):
-		"""
-		Constructor, takes a Point and a value: 1 or 2 if it's filled
-		with the appropriate player's token and 0 for no token at all.
-		"""
-		self.location = location
-		self.value = value
-
-	def is_playable(self, spaces):
-		"""
-		Returns true if this space is empty and something is below it.
-		That means a token is directly below or this is row 0.
-		"""
-		if self.value == 0:
-			below = spaces.get((self.location.x, self.location.y-1))
-			if below == None or below.value != 0:
-				return True
-		return False
-
-### AI CLASS ###
-
 class ComputerPlayer:
-	def __init__(self, playerID, difficulty_level):
+	"""
+	A computer player object to be called upon in order to pick ideal game moves.
+
+	Attributes:
+		player_ID: the number corresponding to the tiles this player lays.
+		difficulty_level: the number of plies this computer player will look ahead
+			during its search. Defaults to 1, which only evaluates all immediate moves.
+	"""
+
+	def __init__(self, player_ID, difficulty_level):
 		"""
 		Constructor, takes a difficulty level (the # of plies to look
 		ahead), and a player ID, either 1 or 2.
 		"""
-		self.playerID = playerID
+		self.player_ID = player_ID
 		self.difficulty_level = difficulty_level
+
+		assert (self.player_ID == 1 or self.player_ID == 2), "The player must be set to 1 or 2!"
+
+		if self.difficulty_level == None or self.difficulty_level < 1:
+			print("Difficulty level has been raised to its minimum of 1.")
+			self.difficulty_level = 1
 
 	def pick_move(self, array):
 		"""
-		Pick the move to make. It will be passed an array with the current 
-		layout, column-major. A 0 indicates no token is there, and 1 or 2
-		indicate discs from the two players. Column 0 is on the left, and row 0 
-		is on the bottom. It must return an int indicating in which column to 
-		drop a disc.
+		Returns the best column for the player to play in, given
+		the state passed.
 		"""
+		# Convert to 2D list array, rotate counter-clockwise 90 degrees
+		state = []
+		for x in range(len(array[0])-1, -1, -1):
+			row = []
+			for y in range(len(array)):
+				row.append(array[y][x])
+			state.append(row)
+		connect = Connect_Four(state)
 
-		rack = Rack([list(i) for i in array])
-		# Note that we increment the difficulty level by one to match the number of plies we should be looking ahead:
-		# That means a difficulty level of "0" will appropriately examine only the immediate moves, instead of breaking. 
-		# We may pass "False" to the final parameter here in order to disable alpha-beta pruning.
-		bestMove = rack.negamax(self.playerID, self.difficulty_level + 1, -float("inf"), float("inf"), True)
-		column = bestMove.column
-		return column
+		# Get all possible moves, then randomly order them.
+		children = connect.get_children(self.player_ID)
+		random.shuffle(children)
 
-### CODE FOR TESTING ###
-
-# computer = ComputerPlayer(2, 4)
-# print("best column=",computer.pick_move(((2,0,0,0),(0,0,0,0),(0,0,0,0),(1,0,0,0),(1,0,0,0),(0,0,0,0))))
-# print("best column=",computer.pick_move(((2,0,0,0),(0,0,0,0),(0,0,0,0),(1,0,0,0))))
+		bestValue = -float("inf")
+		bestChild = children[0]
+		for child in children:
+			# We may pass "False" to the final parameter here in order to disable alpha-beta pruning.
+			value = child.negamax(self.player_ID, self.difficulty_level - 1, -float("inf"), float("inf"), True)
+			if value > bestValue:
+				bestValue = value
+				bestChild = child
+		# Return the int value of the best move's column choice.
+		return connect.find_differing_column(bestChild)
